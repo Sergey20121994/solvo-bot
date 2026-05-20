@@ -1,6 +1,6 @@
 """
 Telegram-бот для просмотра реестра задач СЦ СОЛВО.
-Полная стабильная версия.
+Стабильная версия без падений Markdown.
 """
 
 import os
@@ -69,12 +69,14 @@ PRIORITY_EMOJI = {
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
-# LOAD TASKS
+# HELPERS
 # ──────────────────────────────────────────────────────────────────────────────
 
 def safe_str(value):
+
     if value is None:
         return ""
+
     return str(value).strip()
 
 
@@ -85,18 +87,26 @@ def safe_float(value):
 
     try:
         return float(value)
+
     except:
         return 0
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# LOAD TASKS
+# ──────────────────────────────────────────────────────────────────────────────
+
 def load_tasks():
 
     try:
+
         wb = load_workbook(EXCEL_PATH, data_only=True)
         ws = wb["📋 Реестр"]
 
     except Exception:
+
         logger.error(traceback.format_exc())
+
         return []
 
     tasks = []
@@ -104,9 +114,10 @@ def load_tasks():
     for row in ws.iter_rows(min_row=4, values_only=True):
 
         try:
+
             num = row[0]
 
-            # Пропускаем пустые строки
+            # Excel может хранить как float
             if not isinstance(num, (int, float)):
                 continue
 
@@ -131,6 +142,7 @@ def load_tasks():
             tasks.append(task)
 
         except Exception:
+
             logger.error(traceback.format_exc())
 
     logger.info(f"Загружено задач: {len(tasks)}")
@@ -147,7 +159,7 @@ def format_task_card(t):
     sc_ico = STATUS_EMOJI.get(t["status_sc"], "▪️")
     sv_ico = STATUS_EMOJI.get(t["status_solvo"], "▪️")
 
-    # Авто-приоритет
+    # Автоприоритет
     if not t["priority"]:
 
         sv = t["status_solvo"]
@@ -181,30 +193,30 @@ def format_task_card(t):
         if t["hours"] else "—"
     )
 
-    notes = (
-        f"\n💬 *Примечание:* {t['notes']}"
-        if t["notes"] else ""
-    )
-
     ticket = (
-        f"\n🎫 *Заявка:* `{t['ticket']}`"
+        f"\n🎫 Заявка: {t['ticket']}"
         if t["ticket"] else ""
     )
 
+    notes = (
+        f"\n💬 Примечание: {t['notes']}"
+        if t["notes"] else ""
+    )
+
     return (
-        f"📋 *Задача #{t['num']}*\n"
+        f"📋 Задача #{t['num']}\n"
         f"━━━━━━━━━━━━━━━━━━━\n"
-        f"*{t['name']}*\n\n"
+        f"{t['name']}\n\n"
         f"📝 {t['desc']}\n"
         f"{ticket}\n\n"
-        f"📂 *Категория:* {t['category']}\n"
-        f"📅 *Срок:* {t['deadline']}\n"
-        f"🚀 *Релиз:* {release}\n\n"
-        f"{sc_ico} *Статус СЦ:* {t['status_sc']}\n"
-        f"{sv_ico} *Статус СОЛВО:* {t['status_solvo']}\n\n"
-        f"⏱ *Оценка:* {hours}\n"
-        f"💰 *Оценена:* {agreed}\n"
-        f"{pr_ico} *Приоритет:* {t['priority']}"
+        f"📂 Категория: {t['category']}\n"
+        f"📅 Срок: {t['deadline']}\n"
+        f"🚀 Релиз: {release}\n\n"
+        f"{sc_ico} Статус СЦ: {t['status_sc']}\n"
+        f"{sv_ico} Статус СОЛВО: {t['status_solvo']}\n\n"
+        f"⏱ Оценка: {hours}\n"
+        f"💰 Оценена: {agreed}\n"
+        f"{pr_ico} Приоритет: {t['priority']}"
         f"{notes}"
     )
 
@@ -242,15 +254,6 @@ def format_summary():
         )
     )
 
-    analyt = sum(
-        1 for t in tasks
-        if t["status_solvo"] in (
-            "Аналитика",
-            "Оценка",
-            "Ожидает рассмотрения"
-        )
-    )
-
     paused = sum(
         1 for t in tasks
         if t["status_solvo"] == "Приостановлена"
@@ -260,57 +263,14 @@ def format_summary():
 
     pct = round(done / total * 100) if total else 0
 
-    cats = {}
-
-    for t in tasks:
-
-        c = t["category"]
-
-        if c not in cats:
-            cats[c] = {
-                "total": 0,
-                "done": 0,
-            }
-
-        cats[c]["total"] += 1
-
-        if t["status_solvo"] in (
-            "Установлено",
-            "Не СОЛВО",
-            "Выполнено"
-        ):
-            cats[c]["done"] += 1
-
-    cat_lines = ""
-
-    for cat, v in cats.items():
-
-        progress = (
-            v["done"] * 5 // v["total"]
-            if v["total"] else 0
-        )
-
-        bar = (
-            "█" * progress +
-            "░" * (5 - progress)
-        )
-
-        cat_lines += (
-            f"{bar} {cat[:25]}: "
-            f"{v['done']}/{v['total']}\n"
-        )
-
     return (
-        f"📊 *СВОДКА ПО РЕЕСТРУ*\n"
+        f"📊 СВОДКА ПО РЕЕСТРУ\n"
         f"━━━━━━━━━━━━━━━━━━━\n"
-        f"📌 Всего задач: *{total}*\n"
-        f"✅ Выполнено: *{done}* ({pct}%)\n"
-        f"⚙️ В работе: *{active}*\n"
-        f"🔍 Аналитика/Оценка: *{analyt}*\n"
-        f"⏸️ Приостановлено: *{paused}*\n"
-        f"⏱ Суммарная оценка: *{round(total_hours,1)} ч/ч*\n\n"
-        f"*По разделам:*\n"
-        f"`{cat_lines}`"
+        f"📌 Всего задач: {total}\n"
+        f"✅ Выполнено: {done} ({pct}%)\n"
+        f"⚙️ В работе: {active}\n"
+        f"⏸️ Приостановлено: {paused}\n"
+        f"⏱ Суммарная оценка: {round(total_hours,1)} ч/ч"
     )
 
 
@@ -321,26 +281,27 @@ def format_summary():
 async def cmd_start(update, context):
 
     text = (
-        "👋 Привет! Я бот реестра задач *СЦ СОЛВО*.\n\n"
+        "👋 Привет! Я бот реестра задач СЦ СОЛВО.\n\n"
         "Что умею:\n"
-        "🔢 `/task 14` — карточка задачи\n"
-        "🔍 `/find букинг` — поиск\n"
-        "📊 `/summary` — сводка\n"
-        "📂 `/category терминал`\n"
-        "🚦 `/status тестирование`\n\n"
+        "🔢 /task 14 — карточка задачи\n"
+        "🔍 /find букинг — поиск\n"
+        "📊 /summary — сводка\n"
+        "📂 /category терминал\n"
+        "🚦 /status тестирование\n\n"
         "Можно просто написать номер или слово."
     )
 
     keyboard = [
-        [InlineKeyboardButton(
-            "📊 Сводка",
-            callback_data="summary"
-        )],
+        [
+            InlineKeyboardButton(
+                "📊 Сводка",
+                callback_data="summary"
+            )
+        ],
     ]
 
     await update.message.reply_text(
         text,
-        parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
@@ -350,18 +311,20 @@ async def cmd_task(update, context):
     if not context.args:
 
         await update.message.reply_text(
-            "Пример:\n`/task 14`",
-            parse_mode="Markdown"
+            "Пример:\n/task 14"
         )
+
         return
 
     try:
         num = int(context.args[0])
+
     except:
 
         await update.message.reply_text(
             "Номер должен быть числом."
         )
+
         return
 
     tasks = load_tasks()
@@ -373,11 +336,11 @@ async def cmd_task(update, context):
         await update.message.reply_text(
             f"❌ Задача #{num} не найдена."
         )
+
         return
 
     await update.message.reply_text(
-        format_task_card(found[0]),
-        parse_mode="Markdown"
+        format_task_card(found[0])
     )
 
 
@@ -386,9 +349,9 @@ async def cmd_find(update, context):
     if not context.args:
 
         await update.message.reply_text(
-            "Пример:\n`/find букинг`",
-            parse_mode="Markdown"
+            "Пример:\n/find букинг"
         )
+
         return
 
     query = " ".join(context.args).lower().strip()
@@ -414,18 +377,19 @@ async def cmd_find(update, context):
         await update.message.reply_text(
             f"❌ По запросу «{query}» ничего не найдено."
         )
+
         return
 
     if len(found) == 1:
 
         await update.message.reply_text(
-            format_task_card(found[0]),
-            parse_mode="Markdown"
+            format_task_card(found[0])
         )
+
         return
 
     text = (
-        f"🔍 Найдено задач: *{len(found)}*\n\n"
+        f"🔍 Найдено задач: {len(found)}\n\n"
         f"Выбери задачу:"
     )
 
@@ -453,7 +417,6 @@ async def cmd_find(update, context):
 
     await update.message.reply_text(
         text,
-        parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
@@ -461,8 +424,7 @@ async def cmd_find(update, context):
 async def cmd_summary(update, context):
 
     await update.message.reply_text(
-        format_summary(),
-        parse_mode="Markdown"
+        format_summary()
     )
 
 
@@ -471,9 +433,9 @@ async def cmd_category(update, context):
     if not context.args:
 
         await update.message.reply_text(
-            "Пример:\n`/category терминал`",
-            parse_mode="Markdown"
+            "Пример:\n/category терминал"
         )
+
         return
 
     query = " ".join(context.args).lower()
@@ -490,10 +452,11 @@ async def cmd_category(update, context):
         await update.message.reply_text(
             f"❌ Раздел «{query}» не найден."
         )
+
         return
 
     lines = [
-        f"📂 *{query}* — {len(found)} задач\n"
+        f"📂 {query} — {len(found)} задач\n"
     ]
 
     for t in found:
@@ -504,13 +467,11 @@ async def cmd_category(update, context):
         )
 
         lines.append(
-            f"{sv_ico} *#{t['num']}* "
-            f"{t['name']}"
+            f"{sv_ico} #{t['num']} {t['name']}"
         )
 
     await update.message.reply_text(
-        "\n".join(lines[:50]),
-        parse_mode="Markdown"
+        "\n".join(lines[:50])
     )
 
 
@@ -519,9 +480,9 @@ async def cmd_status(update, context):
     if not context.args:
 
         await update.message.reply_text(
-            "Пример:\n`/status тестирование`",
-            parse_mode="Markdown"
+            "Пример:\n/status тестирование"
         )
+
         return
 
     query = " ".join(context.args).lower()
@@ -532,8 +493,7 @@ async def cmd_status(update, context):
         t for t in tasks
         if (
             query in t["status_sc"].lower()
-            or
-            query in t["status_solvo"].lower()
+            or query in t["status_solvo"].lower()
         )
     ]
 
@@ -542,10 +502,11 @@ async def cmd_status(update, context):
         await update.message.reply_text(
             f"❌ Статус «{query}» не найден."
         )
+
         return
 
     lines = [
-        f"🚦 Найдено задач: *{len(found)}*\n"
+        f"🚦 Найдено задач: {len(found)}\n"
     ]
 
     for t in found:
@@ -556,13 +517,11 @@ async def cmd_status(update, context):
         )
 
         lines.append(
-            f"{sv_ico} *#{t['num']}* "
-            f"{t['name']}"
+            f"{sv_ico} #{t['num']} {t['name']}"
         )
 
     await update.message.reply_text(
-        "\n".join(lines[:50]),
-        parse_mode="Markdown"
+        "\n".join(lines[:50])
     )
 
 
@@ -573,6 +532,7 @@ async def cmd_registry(update, context):
         await update.message.reply_text(
             "Файл реестра не найден."
         )
+
         return
 
     await update.message.reply_text(
@@ -624,8 +584,7 @@ async def handle_callback(update, context):
     if data == "summary":
 
         await query.message.reply_text(
-            format_summary(),
-            parse_mode="Markdown"
+            format_summary()
         )
 
     elif data.startswith("task_"):
@@ -642,8 +601,7 @@ async def handle_callback(update, context):
         if found:
 
             await query.message.reply_text(
-                format_task_card(found[0]),
-                parse_mode="Markdown"
+                format_task_card(found[0])
             )
 
 
@@ -674,7 +632,9 @@ def main():
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("registry", cmd_registry))
 
-    app.add_handler(CallbackQueryHandler(handle_callback))
+    app.add_handler(
+        CallbackQueryHandler(handle_callback)
+    )
 
     app.add_handler(
         MessageHandler(
@@ -683,7 +643,7 @@ def main():
         )
     )
 
-    logger.info("Бот запущен")
+    logger.info("Бот успешно запущен")
 
     app.run_polling(
         allowed_updates=Update.ALL_TYPES
