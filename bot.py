@@ -385,6 +385,22 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.reply_text(format_task_card(found[0]), parse_mode="Markdown")
 
 
+async def cmd_registry(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Отправить файл реестра: /registry"""
+    import os
+    if not os.path.exists(EXCEL_PATH):
+        await update.message.reply_text("Файл реестра не найден на сервере.")
+        return
+    tasks = load_tasks()
+    caption = f"Реестр задач автоматизации СЦ СОЛВО\nВсего задач: {len(tasks)}"
+    await update.message.reply_text("Отправляю файл реестра...")
+    with open(EXCEL_PATH, "rb") as f:
+        await update.message.reply_document(
+            document=f,
+            filename="Реестр_Автоматизация_СЦ_СОЛВО_2026.xlsx",
+            caption=caption,
+        )
+
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
@@ -399,7 +415,8 @@ def main():
     app.add_handler(CommandHandler("find",     cmd_find))
     app.add_handler(CommandHandler("summary",  cmd_summary))
     app.add_handler(CommandHandler("category", cmd_category))
-    app.add_handler(CommandHandler("status",   cmd_status))
+    app.add_handler(CommandHandler("status",    cmd_status))
+    app.add_handler(CommandHandler("registry",  cmd_registry))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
