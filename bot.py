@@ -105,50 +105,58 @@ def load_tasks():
             data_only=True
         )
 
-        # Берём первый лист
-        ws = wb[wb.sheetnames[0]]
-
         tasks = []
 
-        for row in ws.iter_rows(
-            min_row=4,
-            values_only=True
-        ):
+        # Читаем ВСЕ листы
+        for sheet_name in wb.sheetnames:
 
-            try:
+            ws = wb[sheet_name]
 
-                if not row:
-                    continue
+            logger.info(
+                f"Читаем лист: {sheet_name}"
+            )
 
-                num = row[0]
+            for row in ws.iter_rows(
+                min_row=4,
+                values_only=True
+            ):
 
-                if not isinstance(
-                    num,
-                    (int, float)
-                ):
-                    continue
+                try:
 
-                task = {
-                    "num": int(num),
-                    "ticket": safe_str(row[1]),
-                    "name": safe_str(row[2]),
-                    "desc": safe_str(row[3]),
-                    "deadline": safe_str(row[4]),
-                    "status_sc": safe_str(row[5]),
-                    "status_solvo": safe_str(row[6]),
-                    "release": safe_str(row[7]),
-                    "hours": safe_float(row[8]),
-                    "agreed": safe_str(row[9]),
-                    "category": safe_str(row[10]),
-                }
+                    if not row:
+                        continue
 
-                tasks.append(task)
+                    num = row[0]
 
-            except Exception:
+                    if not isinstance(
+                        num,
+                        (int, float)
+                    ):
+                        continue
 
-                logger.error(
-                    traceback.format_exc()
-                )
+                    task = {
+                        "num": int(num),
+                        "ticket": safe_str(row[1]),
+                        "name": safe_str(row[2]),
+                        "desc": safe_str(row[3]),
+                        "deadline": safe_str(row[4]),
+                        "status_sc": safe_str(row[5]),
+                        "status_solvo": safe_str(row[6]),
+                        "release": safe_str(row[7]),
+                        "hours": safe_float(row[8]),
+                        "agreed": safe_str(row[9]),
+
+                        # Категория = имя листа
+                        "category": sheet_name,
+                    }
+
+                    tasks.append(task)
+
+                except Exception:
+
+                    logger.error(
+                        traceback.format_exc()
+                    )
 
         logger.info(
             f"Загружено задач: {len(tasks)}"
@@ -263,10 +271,10 @@ async def start(update, context):
     text = (
         "👋 Привет! Я бот реестра задач СЦ СОЛВО.\n\n"
 
-        "Что умею:\n"
+        "Что умею:\n\n"
 
         "🔢 /task 14 — карточка задачи\n"
-        "🔍 /find букинг — поиск\n"
+        "🔍 /find контейнер — поиск\n"
         "📊 /summary — сводка\n"
         "📂 /category терминал\n"
         "🚦 /status тестирование\n"
@@ -309,7 +317,7 @@ async def task(update, context):
     if not context.args:
 
         await update.message.reply_text(
-            "Пример:\n/task 14"
+            "Пример:\n/task 1"
         )
 
         return
@@ -414,7 +422,7 @@ async def category(update, context):
     if not context.args:
 
         await update.message.reply_text(
-            "Пример:\n/category Судовые документы"
+            "Пример:\n/category Терминал"
         )
 
         return
