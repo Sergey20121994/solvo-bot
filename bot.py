@@ -107,7 +107,10 @@ def load_tasks():
 
         tasks = []
 
-        # Читаем ВСЕ листы
+        # Защита от дублей
+        unique_tasks = set()
+
+        # Читаем все листы
         for sheet_name in wb.sheetnames:
 
             ws = wb[sheet_name]
@@ -151,18 +154,33 @@ def load_tasks():
                     num = row[0]
                     name = safe_str(row[2])
 
-                    # Пропускаем мусор
+                    # Пропускаем пустые строки
                     if not name:
                         continue
 
+                    # Только задачи с номером
                     if not isinstance(
                         num,
                         (int, float)
                     ):
                         continue
 
+                    num = int(num)
+
+                    # Уникальность
+                    unique_key = (
+                        num,
+                        name.lower()
+                    )
+
+                    # Пропускаем дубли
+                    if unique_key in unique_tasks:
+                        continue
+
+                    unique_tasks.add(unique_key)
+
                     task = {
-                        "num": int(num),
+                        "num": num,
                         "ticket": safe_str(row[1]),
                         "name": name,
                         "desc": safe_str(row[3]),
@@ -172,8 +190,6 @@ def load_tasks():
                         "release": safe_str(row[7]),
                         "hours": safe_float(row[8]),
                         "agreed": safe_str(row[9]),
-
-                        # Категория = название листа
                         "category": sheet_name,
                     }
 
@@ -268,7 +284,7 @@ def format_summary(tasks):
         f"📌 Всего задач: {total}\n"
         f"✅ Выполнено: {done}\n"
         f"⚙️ В работе: {active}\n"
-        f"⏱ Всего часов: {round(total_hours, 1)}"
+        f"⏱️ Всего часов: {round(total_hours, 1)}"
     )
 
 
@@ -440,7 +456,9 @@ async def find(update, context):
 
     await update.message.reply_text(
         f"🔍 Найдено задач: {len(found)}\nВыберите задачу:",
-        reply_markup=InlineKeyboardMarkup(keyboard)
+        reply_markup=InlineKeyboardMarkup(
+            keyboard
+        )
     )
 
 
