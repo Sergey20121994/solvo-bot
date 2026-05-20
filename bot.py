@@ -116,8 +116,30 @@ def load_tasks():
                 f"Читаем лист: {sheet_name}"
             )
 
+            header_row = None
+
+            # Ищем строку заголовков
+            for i in range(1, 15):
+
+                row_values = [
+                    safe_str(cell.value).lower()
+                    for cell in ws[i]
+                ]
+
+                if (
+                    "номер заявки" in row_values
+                    or "наименование" in " ".join(row_values)
+                ):
+                    header_row = i
+                    break
+
+            if not header_row:
+                continue
+
+            start_row = header_row + 1
+
             for row in ws.iter_rows(
-                min_row=4,
+                min_row=start_row,
                 values_only=True
             ):
 
@@ -127,6 +149,11 @@ def load_tasks():
                         continue
 
                     num = row[0]
+                    name = safe_str(row[2])
+
+                    # Пропускаем мусор
+                    if not name:
+                        continue
 
                     if not isinstance(
                         num,
@@ -137,7 +164,7 @@ def load_tasks():
                     task = {
                         "num": int(num),
                         "ticket": safe_str(row[1]),
-                        "name": safe_str(row[2]),
+                        "name": name,
                         "desc": safe_str(row[3]),
                         "deadline": safe_str(row[4]),
                         "status_sc": safe_str(row[5]),
@@ -146,7 +173,7 @@ def load_tasks():
                         "hours": safe_float(row[8]),
                         "agreed": safe_str(row[9]),
 
-                        # Категория = имя листа
+                        # Категория = название листа
                         "category": sheet_name,
                     }
 
@@ -273,7 +300,7 @@ async def start(update, context):
 
         "Что умею:\n\n"
 
-        "🔢 /task 14 — карточка задачи\n"
+        "🔢 /task 1 — карточка задачи\n"
         "🔍 /find контейнер — поиск\n"
         "📊 /summary — сводка\n"
         "📂 /category терминал\n"
@@ -395,9 +422,7 @@ async def find(update, context):
 
         return
 
-    lines = [
-        f"🔍 Найдено задач: {len(found)}\n"
-    ]
+    keyboard = []
 
     for t in found[:20]:
 
@@ -406,12 +431,16 @@ async def find(update, context):
             "▪️"
         )
 
-        lines.append(
-            f"{emoji} #{t['num']} {t['name']}"
-        )
+        keyboard.append([
+            InlineKeyboardButton(
+                f"{emoji} #{t['num']} {t['name'][:35]}",
+                callback_data=f"task_{t['num']}"
+            )
+        ])
 
     await update.message.reply_text(
-        "\n".join(lines)
+        f"🔍 Найдено задач: {len(found)}\nВыберите задачу:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 
@@ -446,9 +475,7 @@ async def category(update, context):
 
         return
 
-    lines = [
-        f"📂 Раздел: {query}\n"
-    ]
+    keyboard = []
 
     for t in found:
 
@@ -457,12 +484,18 @@ async def category(update, context):
             "▪️"
         )
 
-        lines.append(
-            f"{emoji} #{t['num']} {t['name']}"
-        )
+        keyboard.append([
+            InlineKeyboardButton(
+                f"{emoji} #{t['num']} {t['name'][:35]}",
+                callback_data=f"task_{t['num']}"
+            )
+        ])
 
     await update.message.reply_text(
-        "\n".join(lines[:50])
+        f"📂 Раздел: {query}\nВыберите задачу:",
+        reply_markup=InlineKeyboardMarkup(
+            keyboard
+        )
     )
 
 
@@ -501,9 +534,7 @@ async def status(update, context):
 
         return
 
-    lines = [
-        f"🚦 Статус: {query}\n"
-    ]
+    keyboard = []
 
     for t in found:
 
@@ -512,12 +543,18 @@ async def status(update, context):
             "▪️"
         )
 
-        lines.append(
-            f"{emoji} #{t['num']} {t['name']}"
-        )
+        keyboard.append([
+            InlineKeyboardButton(
+                f"{emoji} #{t['num']} {t['name'][:35]}",
+                callback_data=f"task_{t['num']}"
+            )
+        ])
 
     await update.message.reply_text(
-        "\n".join(lines[:50])
+        f"🚦 Статус: {query}\nВыберите задачу:",
+        reply_markup=InlineKeyboardMarkup(
+            keyboard
+        )
     )
 
 
@@ -597,6 +634,31 @@ async def callback_handler(update, context):
                 filename="registry.xlsx",
                 caption="📁 Реестр задач"
             )
+
+    elif data.startswith("task_"):
+
+        num = int(
+            data.replace("task_", "")
+        )
+
+        tasks = load_tasks()
+
+        found = [
+            t for t in tasks
+            if t["num"] == num
+        ]
+
+        if not found:
+
+            await query.message.reply_text(
+                "❌ Задача не найдена"
+            )
+
+            return
+
+        await query.message.reply_text(
+            format_task(found[0])
+        )
 
 
 # ─────────────────────────────────────────────────────
