@@ -1,26 +1,33 @@
-"""
-Telegram-бот реестра задач СЦ СОЛВО
-Полная стабильная версия
-"""
-
 import os
 import logging
-import traceback
-
-from openpyxl import load_workbook
 
 from telegram import (
-    Update,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    Update,
 )
 
 from telegram.ext import (
     Application,
-    CommandHandler,
-    MessageHandler,
     CallbackQueryHandler,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
     filters,
+)
+
+from services.excel_service import (
+    load_tasks,
+    get_task,
+    search_tasks,
+    get_tasks_by_status,
+    get_tasks_by_category,
+)
+
+from services.analytics_service import (
+    get_summary,
+    build_analytics_text,
+    get_overdue_tasks,
 )
 
 # ─────────────────────────────────────────────────────
@@ -28,8 +35,8 @@ from telegram.ext import (
 # ─────────────────────────────────────────────────────
 
 logging.basicConfig(
-    format="%(asctime)s | %(levelname)s | %(message)s",
-    level=logging.INFO
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s"
 )
 
 logger = logging.getLogger(__name__)
@@ -38,184 +45,33 @@ logger = logging.getLogger(__name__)
 # CONFIG
 # ─────────────────────────────────────────────────────
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
-EXCEL_PATH = "registry.xlsx"
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
 
 # ─────────────────────────────────────────────────────
 # EMOJI
 # ─────────────────────────────────────────────────────
 
 STATUS_EMOJI = {
+
     "Установлено": "✅",
     "Выполнено": "✅",
     "Не СОЛВО": "☑️",
+
     "ОПЭ": "🔄",
     "Тестирование": "🧪",
     "На приемке": "📥",
+
     "В работе": "⚙️",
     "Разработка": "👨‍💻",
     "Аналитика": "🔍",
+
     "Оценка": "📊",
     "Ожидает рассмотрения": "⏳",
     "Приостановлена": "⏸️",
 }
 
 # ─────────────────────────────────────────────────────
-# HELPERS
-# ─────────────────────────────────────────────────────
-
-def safe_str(value):
-
-    if value is None:
-        return ""
-
-    return str(value).strip()
-
-
-def safe_float(value):
-
-    if value in (None, "", "-", "—"):
-        return 0
-
-    try:
-        return float(value)
-
-    except:
-        return 0
-
-
-# ─────────────────────────────────────────────────────
-# LOAD EXCEL
-# ─────────────────────────────────────────────────────
-
-def load_tasks():
-
-    try:
-
-        if not os.path.exists(EXCEL_PATH):
-
-            logger.error(
-                f"Файл не найден: {EXCEL_PATH}"
-            )
-
-            return []
-
-        wb = load_workbook(
-            EXCEL_PATH,
-            data_only=True
-        )
-
-        tasks = []
-
-        # Защита от дублей
-        unique_tasks = set()
-
-        # Читаем все листы
-        for sheet_name in wb.sheetnames:
-
-            ws = wb[sheet_name]
-
-            logger.info(
-                f"Читаем лист: {sheet_name}"
-            )
-
-            header_row = None
-
-            # Ищем строку заголовков
-            for i in range(1, 15):
-
-                row_values = [
-                    safe_str(cell.value).lower()
-                    for cell in ws[i]
-                ]
-
-                if (
-                    "номер заявки" in row_values
-                    or "наименование" in " ".join(row_values)
-                ):
-                    header_row = i
-                    break
-
-            if not header_row:
-                continue
-
-            start_row = header_row + 1
-
-            for row in ws.iter_rows(
-                min_row=start_row,
-                values_only=True
-            ):
-
-                try:
-
-                    if not row:
-                        continue
-
-                    num = row[0]
-                    name = safe_str(row[2])
-
-                    # Пропускаем пустые строки
-                    if not name:
-                        continue
-
-                    # Только задачи с номером
-                    if not isinstance(
-                        num,
-                        (int, float)
-                    ):
-                        continue
-
-                    num = int(num)
-
-                    # Уникальность
-                    unique_key = (
-                        num,
-                        name.lower()
-                    )
-
-                    # Пропускаем дубли
-                    if unique_key in unique_tasks:
-                        continue
-
-                    unique_tasks.add(unique_key)
-
-                    task = {
-                        "num": num,
-                        "ticket": safe_str(row[1]),
-                        "name": name,
-                        "desc": safe_str(row[3]),
-                        "deadline": safe_str(row[4]),
-                        "status_sc": safe_str(row[5]),
-                        "status_solvo": safe_str(row[6]),
-                        "release": safe_str(row[7]),
-                        "hours": safe_float(row[8]),
-                        "agreed": safe_str(row[9]),
-                        "category": sheet_name,
-                    }
-
-                    tasks.append(task)
-
-                except Exception:
-
-                    logger.error(
-                        traceback.format_exc()
-                    )
-
-        logger.info(
-            f"Загружено задач: {len(tasks)}"
-        )
-
-        return tasks
-
-    except Exception:
-
-        logger.error(traceback.format_exc())
-
-        return []
-
-
-# ─────────────────────────────────────────────────────
-# FORMATTERS
+# FORMAT TASK
 # ─────────────────────────────────────────────────────
 
 def format_task(task):
@@ -231,6 +87,7 @@ def format_task(task):
     )
 
     return (
+
         f"📋 Задача #{task['num']}\n"
         f"━━━━━━━━━━━━━━━━━━━\n\n"
 
@@ -246,53 +103,14 @@ def format_task(task):
         f"{sc_emoji} СЦ: {task['status_sc']}\n"
         f"{sv_emoji} СОЛВО: {task['status_solvo']}\n\n"
 
-        f"⏱ Оценка: {task['hours']} ч/ч"
+        f"⏱️ Оценка: {task['hours']} ч/ч"
     )
-
-
-def format_summary(tasks):
-
-    total = len(tasks)
-
-    done = sum(
-        1 for t in tasks
-        if t["status_solvo"] in (
-            "Установлено",
-            "Выполнено",
-            "Не СОЛВО"
-        )
-    )
-
-    active = sum(
-        1 for t in tasks
-        if t["status_solvo"] in (
-            "В работе",
-            "Разработка",
-            "Тестирование",
-            "ОПЭ"
-        )
-    )
-
-    total_hours = sum(
-        t["hours"] for t in tasks
-    )
-
-    return (
-        f"📊 СВОДКА ПО РЕЕСТРУ\n"
-        f"━━━━━━━━━━━━━━━━━━━\n\n"
-
-        f"📌 Всего задач: {total}\n"
-        f"✅ Выполнено: {done}\n"
-        f"⚙️ В работе: {active}\n"
-        f"⏱️ Всего часов: {round(total_hours, 1)}"
-    )
-
 
 # ─────────────────────────────────────────────────────
-# COMMANDS
+# MAIN MENU
 # ─────────────────────────────────────────────────────
 
-async def start(update, context):
+def build_main_menu():
 
     keyboard = [
 
@@ -300,6 +118,30 @@ async def start(update, context):
             InlineKeyboardButton(
                 "📊 Сводка",
                 callback_data="summary"
+            ),
+
+            InlineKeyboardButton(
+                "📈 Аналитика",
+                callback_data="analytics"
+            ),
+        ],
+
+        [
+            InlineKeyboardButton(
+                "📂 Категории",
+                callback_data="categories"
+            ),
+
+            InlineKeyboardButton(
+                "🚦 Статусы",
+                callback_data="statuses"
+            ),
+        ],
+
+        [
+            InlineKeyboardButton(
+                "🔥 Просроченные",
+                callback_data="overdue"
             )
         ],
 
@@ -309,93 +151,84 @@ async def start(update, context):
                 callback_data="registry"
             )
         ],
+
+        [
+            InlineKeyboardButton(
+                "🌐 Dashboard",
+                url="https://google.com"
+            )
+        ],
     ]
 
+    return InlineKeyboardMarkup(keyboard)
+
+# ─────────────────────────────────────────────────────
+# START
+# ─────────────────────────────────────────────────────
+
+async def start(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
     text = (
-        "👋 Привет! Я бот реестра задач СЦ СОЛВО.\n\n"
 
-        "Что умею:\n\n"
+        "👋 Система управления реестром СОЛВО\n\n"
 
-        "🔢 /task 1 — карточка задачи\n"
-        "🔍 /find контейнер — поиск\n"
-        "📊 /summary — сводка\n"
-        "📂 /category терминал\n"
-        "🚦 /status тестирование\n"
-        "📁 /registry — скачать Excel\n\n"
+        "Доступные функции:\n\n"
 
-        "Можно просто написать номер задачи."
+        "📊 Сводка\n"
+        "📈 Аналитика\n"
+        "📂 Категории\n"
+        "🚦 Статусы\n"
+        "🔥 Просроченные\n"
+        "📁 Скачать Excel\n\n"
+
+        "Можно:\n"
+        "• написать номер задачи\n"
+        "• использовать /find\n"
+        "• использовать кнопки"
     )
 
     await update.message.reply_text(
         text,
-        reply_markup=InlineKeyboardMarkup(
-            keyboard
-        )
+        reply_markup=build_main_menu()
     )
 
-
+# ─────────────────────────────────────────────────────
+# SUMMARY
 # ─────────────────────────────────────────────────────
 
 async def summary(update, context):
 
-    tasks = load_tasks()
+    summary_data = get_summary()
 
-    if not tasks:
+    text = (
 
-        await update.message.reply_text(
-            "⚠️ Не удалось загрузить реестр."
-        )
+        "📊 СВОДКА ПО РЕЕСТРУ\n"
+        "━━━━━━━━━━━━━━━━━━━\n\n"
 
-        return
-
-    await update.message.reply_text(
-        format_summary(tasks)
+        f"📌 Всего задач: {summary_data['total']}\n"
+        f"✅ Выполнено: {summary_data['done']}\n"
+        f"⚙️ В работе: {summary_data['active']}\n"
+        f"⏱️ Всего часов: {summary_data['hours']}\n"
+        f"📈 Выполнение: {summary_data['progress']}%"
     )
 
+    await update.message.reply_text(text)
 
 # ─────────────────────────────────────────────────────
+# ANALYTICS
+# ─────────────────────────────────────────────────────
 
-async def task(update, context):
+async def analytics(update, context):
 
-    if not context.args:
+    text = build_analytics_text()
 
-        await update.message.reply_text(
-            "Пример:\n/task 1"
-        )
+    await update.message.reply_text(text)
 
-        return
-
-    try:
-        num = int(context.args[0])
-
-    except:
-
-        await update.message.reply_text(
-            "Номер должен быть числом."
-        )
-
-        return
-
-    tasks = load_tasks()
-
-    found = [
-        t for t in tasks
-        if t["num"] == num
-    ]
-
-    if not found:
-
-        await update.message.reply_text(
-            f"❌ Задача #{num} не найдена."
-        )
-
-        return
-
-    await update.message.reply_text(
-        format_task(found[0])
-    )
-
-
+# ─────────────────────────────────────────────────────
+# FIND
 # ─────────────────────────────────────────────────────
 
 async def find(update, context):
@@ -408,32 +241,14 @@ async def find(update, context):
 
         return
 
-    query = " ".join(
-        context.args
-    ).lower()
+    query = " ".join(context.args)
 
-    tasks = load_tasks()
-
-    found = []
-
-    for t in tasks:
-
-        text = " ".join([
-
-            t["name"],
-            t["desc"],
-            t["ticket"],
-            t["category"]
-
-        ]).lower()
-
-        if query in text:
-            found.append(t)
+    found = search_tasks(query)
 
     if not found:
 
         await update.message.reply_text(
-            f"❌ Ничего не найдено: {query}"
+            "❌ Ничего не найдено."
         )
 
         return
@@ -448,164 +263,84 @@ async def find(update, context):
         )
 
         keyboard.append([
+
             InlineKeyboardButton(
                 f"{emoji} #{t['num']} {t['name'][:35]}",
                 callback_data=f"task_{t['num']}"
             )
+
         ])
 
     await update.message.reply_text(
-        f"🔍 Найдено задач: {len(found)}\nВыберите задачу:",
+
+        f"🔍 Найдено задач: {len(found)}",
+
         reply_markup=InlineKeyboardMarkup(
             keyboard
         )
     )
 
-
+# ─────────────────────────────────────────────────────
+# TASK
 # ─────────────────────────────────────────────────────
 
-async def category(update, context):
+async def task(update, context):
 
     if not context.args:
 
         await update.message.reply_text(
-            "Пример:\n/category Терминал"
+            "Пример:\n/task 12"
         )
 
         return
 
-    query = " ".join(
-        context.args
-    ).lower()
+    try:
 
-    tasks = load_tasks()
+        task_num = int(context.args[0])
 
-    found = [
-        t for t in tasks
-        if query in t["category"].lower()
-    ]
-
-    if not found:
+    except:
 
         await update.message.reply_text(
-            f"❌ Раздел «{query}» не найден."
+            "Номер должен быть числом."
         )
 
         return
 
-    keyboard = []
+    task_data = get_task(task_num)
 
-    for t in found:
+    if not task_data:
 
-        emoji = STATUS_EMOJI.get(
-            t["status_solvo"],
-            "▪️"
+        await update.message.reply_text(
+            "❌ Задача не найдена."
         )
 
-        keyboard.append([
-            InlineKeyboardButton(
-                f"{emoji} #{t['num']} {t['name'][:35]}",
-                callback_data=f"task_{t['num']}"
-            )
-        ])
+        return
 
     await update.message.reply_text(
-        f"📂 Раздел: {query}\nВыберите задачу:",
-        reply_markup=InlineKeyboardMarkup(
-            keyboard
-        )
+        format_task(task_data)
     )
-
 
 # ─────────────────────────────────────────────────────
-
-async def status(update, context):
-
-    if not context.args:
-
-        await update.message.reply_text(
-            "Пример:\n/status тестирование"
-        )
-
-        return
-
-    query = " ".join(
-        context.args
-    ).lower()
-
-    tasks = load_tasks()
-
-    found = [
-        t for t in tasks
-        if (
-            query in t["status_sc"].lower()
-            or
-            query in t["status_solvo"].lower()
-        )
-    ]
-
-    if not found:
-
-        await update.message.reply_text(
-            f"❌ Статус «{query}» не найден."
-        )
-
-        return
-
-    keyboard = []
-
-    for t in found:
-
-        emoji = STATUS_EMOJI.get(
-            t["status_solvo"],
-            "▪️"
-        )
-
-        keyboard.append([
-            InlineKeyboardButton(
-                f"{emoji} #{t['num']} {t['name'][:35]}",
-                callback_data=f"task_{t['num']}"
-            )
-        ])
-
-    await update.message.reply_text(
-        f"🚦 Статус: {query}\nВыберите задачу:",
-        reply_markup=InlineKeyboardMarkup(
-            keyboard
-        )
-    )
-
-
+# REGISTRY
 # ─────────────────────────────────────────────────────
 
 async def registry(update, context):
 
-    try:
-
-        if not os.path.exists(EXCEL_PATH):
-
-            await update.message.reply_text(
-                "❌ Файл registry.xlsx не найден."
-            )
-
-            return
-
-        with open(EXCEL_PATH, "rb") as f:
-
-            await update.message.reply_document(
-                document=f,
-                filename="registry.xlsx",
-                caption="📁 Реестр задач"
-            )
-
-    except Exception:
-
-        logger.error(traceback.format_exc())
+    if not os.path.exists("registry.xlsx"):
 
         await update.message.reply_text(
-            "❌ Ошибка отправки файла."
+            "❌ registry.xlsx не найден."
         )
 
+        return
+
+    with open("registry.xlsx", "rb") as f:
+
+        await update.message.reply_document(
+            document=f,
+            filename="registry.xlsx",
+            caption="📁 Реестр задач"
+        )
 
 # ─────────────────────────────────────────────────────
 # CALLBACKS
@@ -619,65 +354,263 @@ async def callback_handler(update, context):
 
     data = query.data
 
+    # SUMMARY
     if data == "summary":
+
+        summary_data = get_summary()
+
+        text = (
+
+            "📊 СВОДКА ПО РЕЕСТРУ\n"
+            "━━━━━━━━━━━━━━━━━━━\n\n"
+
+            f"📌 Всего задач: {summary_data['total']}\n"
+            f"✅ Выполнено: {summary_data['done']}\n"
+            f"⚙️ В работе: {summary_data['active']}\n"
+            f"⏱️ Всего часов: {summary_data['hours']}\n"
+            f"📈 Выполнение: {summary_data['progress']}%"
+        )
+
+        await query.message.reply_text(text)
+
+    # ANALYTICS
+    elif data == "analytics":
+
+        await query.message.reply_text(
+            build_analytics_text()
+        )
+
+    # OVERDUE
+    elif data == "overdue":
+
+        overdue = get_overdue_tasks()
+
+        if not overdue:
+
+            await query.message.reply_text(
+                "✅ Просроченных задач нет."
+            )
+
+            return
+
+        keyboard = []
+
+        for t in overdue:
+
+            keyboard.append([
+
+                InlineKeyboardButton(
+                    f"🔥 #{t['num']} {t['name'][:35]}",
+                    callback_data=f"task_{t['num']}"
+                )
+
+            ])
+
+        await query.message.reply_text(
+
+            f"🔥 Просроченных задач: {len(overdue)}",
+
+            reply_markup=InlineKeyboardMarkup(
+                keyboard
+            )
+        )
+
+    # CATEGORIES
+    elif data == "categories":
 
         tasks = load_tasks()
 
-        if not tasks:
+        categories = sorted(
+
+            list(set(
+                t["category"]
+                for t in tasks
+            ))
+
+        )
+
+        keyboard = []
+
+        for category in categories:
+
+            keyboard.append([
+
+                InlineKeyboardButton(
+                    f"📂 {category}",
+                    callback_data=f"category_{category}"
+                )
+
+            ])
+
+        await query.message.reply_text(
+
+            "📂 Категории:",
+
+            reply_markup=InlineKeyboardMarkup(
+                keyboard
+            )
+        )
+
+    # CATEGORY
+    elif data.startswith("category_"):
+
+        category = data.replace(
+            "category_",
+            ""
+        )
+
+        found = get_tasks_by_category(
+            category
+        )
+
+        keyboard = []
+
+        for t in found:
+
+            emoji = STATUS_EMOJI.get(
+                t["status_solvo"],
+                "▪️"
+            )
+
+            keyboard.append([
+
+                InlineKeyboardButton(
+                    f"{emoji} #{t['num']} {t['name'][:35]}",
+                    callback_data=f"task_{t['num']}"
+                )
+
+            ])
+
+        await query.message.reply_text(
+
+            f"📂 {category}",
+
+            reply_markup=InlineKeyboardMarkup(
+                keyboard
+            )
+        )
+
+    # STATUSES
+    elif data == "statuses":
+
+        statuses = [
+
+            "В работе",
+            "Разработка",
+            "Тестирование",
+            "На приемке",
+            "ОПЭ",
+            "Выполнено",
+        ]
+
+        keyboard = []
+
+        for status in statuses:
+
+            keyboard.append([
+
+                InlineKeyboardButton(
+                    f"🚦 {status}",
+                    callback_data=f"status_{status}"
+                )
+
+            ])
+
+        await query.message.reply_text(
+
+            "🚦 Статусы:",
+
+            reply_markup=InlineKeyboardMarkup(
+                keyboard
+            )
+        )
+
+    # STATUS
+    elif data.startswith("status_"):
+
+        status = data.replace(
+            "status_",
+            ""
+        )
+
+        found = get_tasks_by_status(
+            status
+        )
+
+        keyboard = []
+
+        for t in found:
+
+            emoji = STATUS_EMOJI.get(
+                t["status_solvo"],
+                "▪️"
+            )
+
+            keyboard.append([
+
+                InlineKeyboardButton(
+                    f"{emoji} #{t['num']} {t['name'][:35]}",
+                    callback_data=f"task_{t['num']}"
+                )
+
+            ])
+
+        await query.message.reply_text(
+
+            f"🚦 {status}",
+
+            reply_markup=InlineKeyboardMarkup(
+                keyboard
+            )
+        )
+
+    # TASK
+    elif data.startswith("task_"):
+
+        task_num = int(
+            data.replace(
+                "task_",
+                ""
+            )
+        )
+
+        task_data = get_task(task_num)
+
+        if not task_data:
 
             await query.message.reply_text(
-                "⚠️ Не удалось загрузить реестр."
+                "❌ Задача не найдена."
             )
 
             return
 
         await query.message.reply_text(
-            format_summary(tasks)
+            format_task(task_data)
         )
 
+    # REGISTRY
     elif data == "registry":
 
-        if not os.path.exists(EXCEL_PATH):
+        if not os.path.exists(
+            "registry.xlsx"
+        ):
 
             await query.message.reply_text(
-                "❌ registry.xlsx не найден."
+                "❌ Файл не найден."
             )
 
             return
 
-        with open(EXCEL_PATH, "rb") as f:
+        with open(
+            "registry.xlsx",
+            "rb"
+        ) as f:
 
             await query.message.reply_document(
                 document=f,
                 filename="registry.xlsx",
                 caption="📁 Реестр задач"
             )
-
-    elif data.startswith("task_"):
-
-        num = int(
-            data.replace("task_", "")
-        )
-
-        tasks = load_tasks()
-
-        found = [
-            t for t in tasks
-            if t["num"] == num
-        ]
-
-        if not found:
-
-            await query.message.reply_text(
-                "❌ Задача не найдена"
-            )
-
-            return
-
-        await query.message.reply_text(
-            format_task(found[0])
-        )
-
 
 # ─────────────────────────────────────────────────────
 # FREE TEXT
@@ -687,7 +620,7 @@ async def text_handler(update, context):
 
     text = update.message.text.strip()
 
-    # Если номер задачи
+    # Номер задачи
     if text.isdigit():
 
         context.args = [text]
@@ -701,18 +634,11 @@ async def text_handler(update, context):
 
     await find(update, context)
 
-
 # ─────────────────────────────────────────────────────
 # MAIN
 # ─────────────────────────────────────────────────────
 
 def main():
-
-    if not BOT_TOKEN:
-
-        print("❌ BOT_TOKEN не указан")
-
-        return
 
     app = (
         Application.builder()
@@ -720,7 +646,7 @@ def main():
         .build()
     )
 
-    # Commands
+    # COMMANDS
     app.add_handler(
         CommandHandler("start", start)
     )
@@ -730,7 +656,7 @@ def main():
     )
 
     app.add_handler(
-        CommandHandler("task", task)
+        CommandHandler("analytics", analytics)
     )
 
     app.add_handler(
@@ -738,34 +664,34 @@ def main():
     )
 
     app.add_handler(
-        CommandHandler("category", category)
-    )
-
-    app.add_handler(
-        CommandHandler("status", status)
+        CommandHandler("task", task)
     )
 
     app.add_handler(
         CommandHandler("registry", registry)
     )
 
-    # Callbacks
+    # CALLBACKS
     app.add_handler(
-        CallbackQueryHandler(callback_handler)
-    )
-
-    # Free text
-    app.add_handler(
-        MessageHandler(
-            filters.TEXT & ~filters.COMMAND,
-            text_handler
+        CallbackQueryHandler(
+            callback_handler
         )
     )
 
-    logger.info("Бот успешно запущен")
+    # TEXT
+    app.add_handler(
+
+        MessageHandler(
+            filters.TEXT
+            & ~filters.COMMAND,
+            text_handler
+        )
+
+    )
+
+    logger.info("Bot started")
 
     app.run_polling()
-
 
 # ─────────────────────────────────────────────────────
 
