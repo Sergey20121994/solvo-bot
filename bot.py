@@ -155,7 +155,7 @@ def build_main_menu():
         [
             InlineKeyboardButton(
                 "🌐 Dashboard",
-                url="https://google.com"
+                url="https://solvo-bot-production.up.railway.app/"
             )
         ],
     ]
