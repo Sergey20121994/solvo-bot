@@ -150,8 +150,7 @@ def load_tasks():
 
                         "agreed": safe_str(row[9]),
 
-                        # Пока категория = лист
-                        "category": sheet_name,
+                        "category": safe_str(row[10]),
                     }
 
                     tasks.append(task)

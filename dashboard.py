@@ -1,4 +1,4 @@
-from flask import Flask, render_template
+from flask import Flask, render_template, request
 
 from services.excel_service import load_tasks
 
@@ -23,15 +23,60 @@ def index():
 
     summary = get_summary()
 
-    hours_by_category = (
-        get_hours_by_category()
-    )
-
-    status_stats = (
-        get_tasks_by_status_stats()
-    )
-
     overdue = get_overdue_tasks()
+
+    # SEARCH
+    search = request.args.get(
+        "search",
+        ""
+    ).lower()
+
+    if search:
+
+        tasks = [
+
+            t for t in tasks
+
+            if (
+                search in t["name"].lower()
+                or
+                search in t["desc"].lower()
+                or
+                search in t["category"].lower()
+            )
+
+        ]
+
+    # CATEGORY FILTER
+    category_filter = request.args.get(
+        "category",
+        ""
+    )
+
+    if category_filter:
+
+        tasks = [
+
+            t for t in tasks
+
+            if t["category"] == category_filter
+
+        ]
+
+    # UNIQUE CATEGORIES
+    categories = sorted(
+
+        list(set(
+
+            t["category"]
+
+            for t in load_tasks()
+
+            if t["category"]
+
+        ))
+
+    )
 
     return render_template(
 
@@ -41,11 +86,11 @@ def index():
 
         summary=summary,
 
-        hours_by_category=hours_by_category,
-
-        status_stats=status_stats,
-
         overdue=overdue,
+
+        categories=categories,
+
+        current_category=category_filter,
     )
 
 # ─────────────────────────────────────────────────────
