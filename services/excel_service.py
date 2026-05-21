@@ -43,13 +43,32 @@ def load_tasks():
 
     tasks = []
 
-    # Берём только лист "Реестр"
-    if "Реестр" not in workbook.sheetnames:
+    # ─────────────────────────────────────────────
+    # ИЩЕМ ЛИСТ "РЕЕСТР"
+    # ─────────────────────────────────────────────
+
+    sheet = None
+
+    for sheet_name in workbook.sheetnames:
+
+        if "реестр" in sheet_name.lower():
+
+            sheet = workbook[sheet_name]
+
+            break
+
+    if sheet is None:
+
+        print("❌ Лист с реестром не найден")
+
         return []
 
-    sheet = workbook["Реестр"]
+    print(f"✅ Используется лист: {sheet.title}")
 
-    # Со 2 строки
+    # ─────────────────────────────────────────────
+    # ЧИТАЕМ СТРОКИ
+    # ─────────────────────────────────────────────
+
     for row in sheet.iter_rows(
         min_row=2,
         values_only=True
@@ -59,13 +78,13 @@ def load_tasks():
         if not row:
             continue
 
-        # Номер
+        # Номер задачи
         num = row[0]
 
         if num is None:
             continue
 
-        # Название
+        # Название задачи
         name = safe_str(row[2])
 
         if not name:
@@ -108,6 +127,8 @@ def load_tasks():
         }
 
         tasks.append(task)
+
+    print(f"📊 Загружено задач: {len(tasks)}")
 
     return tasks
 
