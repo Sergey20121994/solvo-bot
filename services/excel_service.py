@@ -77,21 +77,34 @@ def load_tasks():
         if not row:
             continue
 
-        num = row[0]
+        # ─────────────────────────────────────────
+        # НОМЕР
+        # ─────────────────────────────────────────
 
-        if num is None:
+        num = safe_str(row[0])
+
+        if not num:
             continue
+
+        # Пропускаем служебные строки
+        if num.lower().strip() in [
+
+            "категория",
+            "category",
+
+        ]:
+            continue
+
+        # ─────────────────────────────────────────
+        # НАЗВАНИЕ
+        # ─────────────────────────────────────────
 
         name = safe_str(row[2])
 
         if not name:
             continue
 
-        # ─────────────────────────────────────
-        # ПРОПУСК СЛУЖЕБНЫХ СТРОК
-        # ─────────────────────────────────────
-
-        normalized = (
+        normalized_name = (
 
             name
             .lower()
@@ -100,13 +113,42 @@ def load_tasks():
 
         )
 
-        if normalized in [
+        # Пропускаем служебные строки
+        if normalized_name in [
 
             "категория",
             "categories",
 
         ]:
             continue
+
+        # ─────────────────────────────────────────
+        # КАТЕГОРИЯ
+        # ─────────────────────────────────────────
+
+        category = safe_str(row[10])
+
+        normalized_category = (
+
+            category
+            .lower()
+            .replace(":", "")
+            .strip()
+
+        )
+
+        # Пропускаем мусорные строки
+        if normalized_category in [
+
+            "категория",
+            "categories",
+
+        ]:
+            continue
+
+        # ─────────────────────────────────────────
+        # TASK
+        # ─────────────────────────────────────────
 
         task = {
 
@@ -141,7 +183,13 @@ def load_tasks():
             "agreed": safe_str(row[9]),
 
             # K
-            "category": safe_str(row[10]),
+            "category": category,
+
+            # L
+            "priority": safe_str(row[11]),
+
+            # M
+            "notes": safe_str(row[12]),
         }
 
         tasks.append(task)
@@ -187,7 +235,8 @@ def search_tasks(query):
             f"{task['ticket']} "
             f"{task['category']} "
             f"{task['release']} "
-            f"{task['status_solvo']}"
+            f"{task['status_solvo']} "
+            f"{task['priority']}"
 
         ).lower()
 
@@ -236,7 +285,8 @@ def get_tasks_by_category(category):
 def filter_tasks(
     category=None,
     status=None,
-    release=None
+    release=None,
+    priority=None
 ):
 
     tasks = load_tasks()
@@ -268,6 +318,16 @@ def filter_tasks(
             t for t in tasks
 
             if t["release"] == release
+
+        ]
+
+    if priority:
+
+        tasks = [
+
+            t for t in tasks
+
+            if t["priority"] == priority
 
         ]
 
