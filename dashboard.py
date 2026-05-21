@@ -3,13 +3,67 @@ from flask import Flask, render_template, request
 from services.excel_service import load_tasks
 
 from services.analytics_service import (
-    get_summary,
-    get_hours_by_category,
-    get_tasks_by_status_stats,
     get_overdue_tasks,
 )
 
 app = Flask(__name__)
+
+# ─────────────────────────────────────────────────────
+# HELPERS
+# ─────────────────────────────────────────────────────
+
+def build_summary(tasks):
+
+    total = len(tasks)
+
+    done = len([
+
+        t for t in tasks
+
+        if t["status_solvo"] in [
+
+            "Выполнено",
+            "Установлено"
+        ]
+
+    ])
+
+    active = len([
+
+        t for t in tasks
+
+        if t["status_solvo"] not in [
+
+            "Выполнено",
+            "Установлено"
+        ]
+
+    ])
+
+    hours = sum(
+
+        t["hours"]
+
+        for t in tasks
+    )
+
+    progress = 0
+
+    if total > 0:
+
+        progress = round(
+            (done / total) * 100,
+            1
+        )
+
+    return {
+
+        "total": total,
+        "done": done,
+        "active": active,
+        "hours": hours,
+        "progress": progress,
+    }
 
 # ─────────────────────────────────────────────────────
 # MAIN PAGE
@@ -20,10 +74,6 @@ app = Flask(__name__)
 def index():
 
     tasks = load_tasks()
-
-    summary = get_summary()
-
-    overdue = get_overdue_tasks()
 
     # SEARCH
     search = request.args.get(
@@ -38,11 +88,17 @@ def index():
             t for t in tasks
 
             if (
+
                 search in t["name"].lower()
+
                 or
+
                 search in t["desc"].lower()
+
                 or
+
                 search in t["category"].lower()
+
             )
 
         ]
@@ -63,7 +119,23 @@ def index():
 
         ]
 
-    # UNIQUE CATEGORIES
+    # SUMMARY УЖЕ ПО ОТФИЛЬТРОВАННЫМ TASKS
+    summary = build_summary(tasks)
+
+    # OVERDUE
+    overdue = [
+
+        t for t in get_overdue_tasks()
+
+        if (
+            not category_filter
+            or
+            t["category"] == category_filter
+        )
+
+    ]
+
+    # CATEGORIES
     categories = sorted(
 
         list(set(

@@ -48,7 +48,7 @@ logger = logging.getLogger(__name__)
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 
 # ─────────────────────────────────────────────────────
-# EMOJI
+# STATUS EMOJI
 # ─────────────────────────────────────────────────────
 
 STATUS_EMOJI = {
@@ -354,7 +354,10 @@ async def callback_handler(update, context):
 
     data = query.data
 
+    # ─────────────────────────────────────────────
     # SUMMARY
+    # ─────────────────────────────────────────────
+
     if data == "summary":
 
         summary_data = get_summary()
@@ -373,14 +376,20 @@ async def callback_handler(update, context):
 
         await query.message.reply_text(text)
 
+    # ─────────────────────────────────────────────
     # ANALYTICS
+    # ─────────────────────────────────────────────
+
     elif data == "analytics":
 
         await query.message.reply_text(
             build_analytics_text()
         )
 
+    # ─────────────────────────────────────────────
     # OVERDUE
+    # ─────────────────────────────────────────────
+
     elif data == "overdue":
 
         overdue = get_overdue_tasks()
@@ -415,7 +424,10 @@ async def callback_handler(update, context):
             )
         )
 
+    # ─────────────────────────────────────────────
     # CATEGORIES
+    # ─────────────────────────────────────────────
+
     elif data == "categories":
 
         tasks = load_tasks()
@@ -423,24 +435,31 @@ async def callback_handler(update, context):
         categories = sorted(
 
             list(set(
+
                 t["category"]
+
                 for t in tasks
+
+                if t["category"]
+
             ))
 
         )
 
         keyboard = []
 
-        for category in categories:
+        for i, category in enumerate(categories):
 
             keyboard.append([
 
                 InlineKeyboardButton(
                     f"📂 {category}",
-                    callback_data=f"category_{category}"
+                    callback_data=f"cat_{i}"
                 )
 
             ])
+
+        context.user_data["categories"] = categories
 
         await query.message.reply_text(
 
@@ -451,13 +470,33 @@ async def callback_handler(update, context):
             )
         )
 
+    # ─────────────────────────────────────────────
     # CATEGORY
-    elif data.startswith("category_"):
+    # ─────────────────────────────────────────────
 
-        category = data.replace(
-            "category_",
-            ""
+    elif data.startswith("cat_"):
+
+        index = int(
+            data.replace(
+                "cat_",
+                ""
+            )
         )
+
+        categories = context.user_data.get(
+            "categories",
+            []
+        )
+
+        if index >= len(categories):
+
+            await query.message.reply_text(
+                "❌ Категория не найдена."
+            )
+
+            return
+
+        category = categories[index]
 
         found = get_tasks_by_category(
             category
@@ -490,7 +529,10 @@ async def callback_handler(update, context):
             )
         )
 
+    # ─────────────────────────────────────────────
     # STATUSES
+    # ─────────────────────────────────────────────
+
     elif data == "statuses":
 
         statuses = [
@@ -525,7 +567,10 @@ async def callback_handler(update, context):
             )
         )
 
+    # ─────────────────────────────────────────────
     # STATUS
+    # ─────────────────────────────────────────────
+
     elif data.startswith("status_"):
 
         status = data.replace(
@@ -564,7 +609,10 @@ async def callback_handler(update, context):
             )
         )
 
+    # ─────────────────────────────────────────────
     # TASK
+    # ─────────────────────────────────────────────
+
     elif data.startswith("task_"):
 
         task_num = int(
@@ -588,7 +636,10 @@ async def callback_handler(update, context):
             format_task(task_data)
         )
 
+    # ─────────────────────────────────────────────
     # REGISTRY
+    # ─────────────────────────────────────────────
+
     elif data == "registry":
 
         if not os.path.exists(
@@ -647,6 +698,7 @@ def main():
     )
 
     # COMMANDS
+
     app.add_handler(
         CommandHandler("start", start)
     )
@@ -672,13 +724,15 @@ def main():
     )
 
     # CALLBACKS
+
     app.add_handler(
         CallbackQueryHandler(
             callback_handler
         )
     )
 
-    # TEXT
+    # TEXT SEARCH
+
     app.add_handler(
 
         MessageHandler(
@@ -696,4 +750,5 @@ def main():
 # ─────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+
     main()
