@@ -74,20 +74,24 @@ def load_tasks():
         values_only=True
     ):
 
-        # Пустая строка
         if not row:
             continue
 
-        # Номер задачи
         num = row[0]
 
         if num is None:
             continue
 
-        # Название задачи
         name = safe_str(row[2])
 
         if not name:
+            continue
+
+        # ─────────────────────────────────────
+        # ПРОПУСКАЕМ СЛУЖЕБНЫЕ СТРОКИ
+        # ─────────────────────────────────────
+
+        if name.lower() == "категория":
             continue
 
         task = {
@@ -167,7 +171,9 @@ def search_tasks(query):
             f"{task['name']} "
             f"{task['desc']} "
             f"{task['ticket']} "
-            f"{task['category']}"
+            f"{task['category']} "
+            f"{task['release']} "
+            f"{task['status_solvo']}"
 
         ).lower()
 
@@ -208,3 +214,47 @@ def get_tasks_by_category(category):
         if t["category"] == category
 
     ]
+
+# ─────────────────────────────────────────────────────
+# FILTER TASKS
+# ─────────────────────────────────────────────────────
+
+def filter_tasks(
+    category=None,
+    status=None,
+    release=None
+):
+
+    tasks = load_tasks()
+
+    if category:
+
+        tasks = [
+
+            t for t in tasks
+
+            if t["category"] == category
+
+        ]
+
+    if status:
+
+        tasks = [
+
+            t for t in tasks
+
+            if t["status_solvo"] == status
+
+        ]
+
+    if release:
+
+        tasks = [
+
+            t for t in tasks
+
+            if t["release"] == release
+
+        ]
+
+    return tasks

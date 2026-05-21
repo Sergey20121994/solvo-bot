@@ -1,6 +1,8 @@
 from flask import Flask, render_template, request
 
-from services.excel_service import load_tasks
+from services.excel_service import (
+    load_tasks,
+)
 
 from services.analytics_service import (
     get_overdue_tasks,
@@ -9,7 +11,7 @@ from services.analytics_service import (
 app = Flask(__name__)
 
 # ─────────────────────────────────────────────────────
-# HELPERS
+# SUMMARY
 # ─────────────────────────────────────────────────────
 
 def build_summary(tasks):
@@ -28,23 +30,14 @@ def build_summary(tasks):
 
     ])
 
-    active = len([
-
-        t for t in tasks
-
-        if t["status_solvo"] not in [
-
-            "Выполнено",
-            "Установлено"
-        ]
-
-    ])
+    active = total - done
 
     hours = sum(
 
         t["hours"]
 
         for t in tasks
+
     )
 
     progress = 0
@@ -75,7 +68,10 @@ def index():
 
     tasks = load_tasks()
 
+    # ─────────────────────────────────────────────
     # SEARCH
+    # ─────────────────────────────────────────────
+
     search = request.args.get(
         "search",
         ""
@@ -103,9 +99,22 @@ def index():
 
         ]
 
-    # CATEGORY FILTER
+    # ─────────────────────────────────────────────
+    # FILTERS
+    # ─────────────────────────────────────────────
+
     category_filter = request.args.get(
         "category",
+        ""
+    )
+
+    status_filter = request.args.get(
+        "status",
+        ""
+    )
+
+    release_filter = request.args.get(
+        "release",
         ""
     )
 
@@ -119,32 +128,95 @@ def index():
 
         ]
 
-    # SUMMARY УЖЕ ПО ОТФИЛЬТРОВАННЫМ TASKS
+    if status_filter:
+
+        tasks = [
+
+            t for t in tasks
+
+            if t["status_solvo"] == status_filter
+
+        ]
+
+    if release_filter:
+
+        tasks = [
+
+            t for t in tasks
+
+            if t["release"] == release_filter
+
+        ]
+
+    # ─────────────────────────────────────────────
+    # SUMMARY
+    # ─────────────────────────────────────────────
+
     summary = build_summary(tasks)
 
+    # ─────────────────────────────────────────────
     # OVERDUE
+    # ─────────────────────────────────────────────
+
     overdue = [
 
         t for t in get_overdue_tasks()
 
         if (
-            not category_filter
-            or
-            t["category"] == category_filter
+
+            (not category_filter or t["category"] == category_filter)
+
+            and
+
+            (not status_filter or t["status_solvo"] == status_filter)
+
         )
 
     ]
 
-    # CATEGORIES
+    # ─────────────────────────────────────────────
+    # FILTER VALUES
+    # ─────────────────────────────────────────────
+
+    all_tasks = load_tasks()
+
     categories = sorted(
 
         list(set(
 
             t["category"]
 
-            for t in load_tasks()
+            for t in all_tasks
 
             if t["category"]
+
+        ))
+
+    )
+
+    statuses = sorted(
+
+        list(set(
+
+            t["status_solvo"]
+
+            for t in all_tasks
+
+            if t["status_solvo"]
+
+        ))
+
+    )
+
+    releases = sorted(
+
+        list(set(
+
+            t["release"]
+
+            for t in all_tasks
+
+            if t["release"]
 
         ))
 
@@ -162,7 +234,15 @@ def index():
 
         categories=categories,
 
+        statuses=statuses,
+
+        releases=releases,
+
         current_category=category_filter,
+
+        current_status=status_filter,
+
+        current_release=release_filter,
     )
 
 # ─────────────────────────────────────────────────────
